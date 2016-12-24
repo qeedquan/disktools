@@ -23,6 +23,10 @@ func main() {
 	parts, err := discover(flag.Arg(0))
 	ck(err)
 
+	if len(parts) == 0 {
+		fmt.Println("No partitions found")
+	}
+
 	for _, p := range parts {
 		switch p := p.(type) {
 		case *mbr.Record:
@@ -44,7 +48,7 @@ func usage() {
 
 func ck(err error) {
 	if err != nil {
-		log.Fatal("disktool:", err)
+		log.Fatal("disktool: ", err)
 	}
 }
 
@@ -94,7 +98,7 @@ func printMBR(p *mbr.Record) {
 	for i, c := range p.Part {
 		fmt.Printf("Partition %d\n", i+1)
 		fmt.Printf("  Bootable:   %b\n", c.Bootable)
-		fmt.Printf("  Type:       %#x\n", c.Type)
+		fmt.Printf("  Type:       %#x (%s)\n", c.Type, mbr.Types[c.Type])
 		fmt.Printf("  LBA:        %d\n", c.LBA)
 		fmt.Printf("  Sectors:    %d\n", c.Sectors)
 		fmt.Printf("  Start CHS: (%d,%d,%d)\n",
