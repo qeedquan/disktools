@@ -1,6 +1,6 @@
 package fat
 
-type BootHeader struct {
+type Pbs struct {
 	Magic     [3]uint8
 	Version   [8]uint8
 	Sectsz    uint16
@@ -22,7 +22,7 @@ type BootHeader struct {
 	Fstype    [8]uint8
 }
 
-type BootHeader32 struct {
+type Pbs32 struct {
 	Magic      [3]uint8
 	Version    [8]uint8
 	Sectsz     uint16

@@ -16,6 +16,8 @@ type Option struct {
 	Sectsz int
 }
 
+type GUID [16]byte
+
 type Header struct {
 	Sig     [8]byte
 	Rev     uint32
@@ -26,7 +28,7 @@ type Header struct {
 	Backup  uint64
 	First   uint64
 	Last    uint64
-	Guid    [16]byte
+	GUID    GUID
 	Table   uint64
 	Ent     uint32
 	Entsz   uint32
@@ -34,8 +36,8 @@ type Header struct {
 }
 
 type Entry struct {
-	Part  [16]byte
-	Uniq  [16]byte
+	Part  GUID
+	Uniq  GUID
 	First uint64
 	Last  uint64
 	Attr  uint64
@@ -50,7 +52,7 @@ type Table struct {
 }
 
 var (
-	ErrHeader = errors.New("gpt: inxid header")
+	ErrHeader = errors.New("gpt: invalid header")
 )
 
 func Open(r io.ReaderAt, o *Option) (*Table, error) {
@@ -157,7 +159,7 @@ func ParseGUID(guid string) ([16]byte, error) {
 	return p, nil
 }
 
-func MustParseGUID(guid string) [16]byte {
+func MustParseGUID(guid string) GUID {
 	p, err := ParseGUID(guid)
 	if err != nil {
 		panic(err)
@@ -165,10 +167,20 @@ func MustParseGUID(guid string) [16]byte {
 	return p
 }
 
+func (p GUID) String() string {
+	return fmt.Sprintf("%X-%X-%X-%X-%X",
+		endian.Read32be(p[0:]),
+		endian.Read32be(p[4:]),
+		endian.Read32be(p[6:]),
+		endian.Read32be(p[8:]),
+		endian.Read48be(p[10:]),
+	)
+}
+
 var Parts = []struct {
 	Name string
 	Desc string
-	UUID [16]byte
+	GUID GUID
 }{
 	{"unused", "Unused entry", MustParseGUID("00000000-0000-0000-0000-000000000000")},
 	{"mbr", "MBR", MustParseGUID("024DEE41-33E7-11D3-9D69-0008C781F39F")},
