@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/qeedquan/disktools/endian"
 	"github.com/qeedquan/disktools/gpt"
 	"github.com/qeedquan/disktools/mbr"
 )
@@ -97,13 +98,15 @@ func printMBR(p *mbr.Record) {
 	printSpaces()
 	for i, c := range p.Part {
 		fmt.Printf("Partition %d\n", i+1)
-		fmt.Printf("  Bootable:   %b\n", c.Bootable)
-		fmt.Printf("  Type:       %#x (%s)\n", c.Type, mbr.Types[c.Type])
-		fmt.Printf("  LBA:        %d\n", c.LBA)
-		fmt.Printf("  Sectors:    %d\n", c.Sectors)
-		fmt.Printf("  Start CHS: (%d,%d,%d)\n",
+		fmt.Printf("  Bootable:     %b\n", c.Bootable)
+		fmt.Printf("  Type:         %#x (%s)\n", c.Type, mbr.Types[c.Type])
+		fmt.Printf("  First sector: %d (at %s)\n",
+			c.LBA, endian.IEEE1541frombits(uint64(c.LBA)*uint64(p.Sectsz)))
+		fmt.Printf("  Last sector:  %d (at %s)\n",
+			c.LBA+c.Sectors, endian.IEEE1541frombits(uint64(c.LBA+c.Sectors)*uint64(p.Sectsz)))
+		fmt.Printf("  Start CHS:    (%d,%d,%d)\n",
 			c.Start.Head, c.Start.Sector, c.Start.Cylinder)
-		fmt.Printf("  End CHS:   (%d,%d,%d)\n",
+		fmt.Printf("  End CHS:      (%d,%d,%d)\n",
 			c.End.Head, c.End.Sector, c.End.Cylinder)
 		fmt.Printf("\n")
 	}

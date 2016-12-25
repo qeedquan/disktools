@@ -8,7 +8,8 @@ import (
 )
 
 type Record struct {
-	Part [4]Part
+	Sectsz int
+	Part   [4]Part
 }
 
 type Part struct {
@@ -47,7 +48,8 @@ func Open(r io.ReaderAt) (*Record, error) {
 	}
 
 	return &Record{
-		Part: part,
+		Sectsz: 512,
+		Part:   part,
 	}, nil
 }
 
