@@ -9,16 +9,17 @@ import (
 
 type Record struct {
 	Sectsz int
-	Part   [4]Part
+	Part   []Part
 }
 
 type Part struct {
-	Bootable uint8
-	Start    CHS
-	Type     uint8
-	End      CHS
-	LBA      uint32
-	Sectors  uint32
+	Bootable   uint8
+	Start      CHS
+	Type       uint8
+	End        CHS
+	FirstLBA   uint32
+	NumSectors uint32
+	LastLBA    uint64
 }
 
 type CHS struct {
@@ -42,19 +43,23 @@ func Open(r io.ReaderAt) (*Record, error) {
 		return nil, ErrHeader
 	}
 
-	var part [4]Part
-	for i := range part {
-		part[i] = readPart(mbr[0x1be+i*16:])
+	var parts []Part
+	for i := 0; i < 4; i++ {
+		part := readPart(mbr[0x1be+i*16:])
+		if part.Type == 0 {
+			continue
+		}
+		parts = append(parts, part)
 	}
 
 	return &Record{
 		Sectsz: 512,
-		Part:   part,
+		Part:   parts,
 	}, nil
 }
 
 func readPart(b []byte) Part {
-	return Part{
+	p := Part{
 		Bootable: b[0],
 		Start: CHS{
 			Head:     uint64(b[1]),
@@ -67,9 +72,18 @@ func readPart(b []byte) Part {
 			Sector:   uint64(b[6]) & 0xbf,
 			Cylinder: uint64(b[6])<<8 | uint64(b[7]),
 		},
-		LBA:     endian.Read32le(b[8:]),
-		Sectors: endian.Read32le(b[12:]),
+		FirstLBA:   endian.Read32le(b[8:]),
+		NumSectors: endian.Read32le(b[12:]),
 	}
+	p.LastLBA = p.calcLastLBA()
+	return p
+}
+
+func (p *Part) calcLastLBA() uint64 {
+	if p.NumSectors > 0 {
+		return uint64(p.FirstLBA) + uint64(p.NumSectors) - 1
+	}
+	return 0
 }
 
 var Types = []string{
