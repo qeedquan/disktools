@@ -21,7 +21,14 @@ func main() {
 		usage()
 	}
 
-	parts, err := discover(flag.Arg(0))
+	name := flag.Arg(0)
+	fi, err := os.Stat(name)
+	ck(err)
+	if fi.IsDir() {
+		ck(fmt.Errorf("%v: is a directory", name))
+	}
+
+	parts, err := discover(name)
 	ck(err)
 
 	if len(parts) == 0 {
@@ -106,10 +113,10 @@ func printMBR(p *mbr.Record) {
 		fmt.Printf("Partition %d\n", i+1)
 		fmt.Printf("  Bootable:       %b\n", c.Bootable)
 		fmt.Printf("  Type:           %#x (%s)\n", c.Type, mbr.Types[c.Type])
-		fmt.Printf("  First sector:   %d (at %s)\n",
-			c.FirstLBA, endian.IEEE1541frombits(uint64(c.FirstLBA)*uint64(p.Sectsz)))
-		fmt.Printf("  Last sector:    %d (at %s)\n",
-			c.LastLBA, endian.IEEE1541frombits(uint64(c.LastLBA)*uint64(p.Sectsz)))
+		fmt.Printf("  First sector:   %d (%#x) (at %s)\n",
+			c.FirstLBA, c.FirstLBA*uint32(p.Sectsz), endian.IEEE1541frombits(uint64(c.FirstLBA)*uint64(p.Sectsz)))
+		fmt.Printf("  Last sector:    %d (%#x) (at %s)\n",
+			c.LastLBA, c.LastLBA*uint64(p.Sectsz), endian.IEEE1541frombits(uint64(c.LastLBA)*uint64(p.Sectsz)))
 		fmt.Printf("  Partition size: %d sectors (%s)\n",
 			size, endian.IEEE1541frombits(size*uint64(p.Sectsz)))
 		fmt.Printf("  Start CHS:      (%d,%d,%d)\n",
