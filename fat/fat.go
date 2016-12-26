@@ -1,11 +1,12 @@
 package fat
 
-type Pbs struct {
+type PBS struct {
 	Magic     [3]uint8
 	Version   [8]uint8
 	Sectsz    uint16
+	Clustsz   uint8
 	Resrv     uint16
-	Fat       uint8
+	NumFats   uint8
 	Rootsz    uint16
 	Volsz     uint16
 	Mediadesc uint8
@@ -22,12 +23,13 @@ type Pbs struct {
 	Fstype    [8]uint8
 }
 
-type Pbs32 struct {
+type PBS32 struct {
 	Magic      [3]uint8
 	Version    [8]uint8
 	Sectsz     uint16
+	Clustsz    uint8
 	Resrv      uint16
-	Fat        uint8
+	NumFats    uint8
 	Rootsz     uint16
 	Volsz      uint16
 	Mediadesc  uint8
@@ -59,7 +61,4 @@ type Dir struct {
 	Date       uint16
 	Start      uint16
 	Length     uint32
-}
-
-type BPB struct {
 }
