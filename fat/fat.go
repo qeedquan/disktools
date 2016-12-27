@@ -62,3 +62,13 @@ type Dir struct {
 	Start      uint16
 	Length     uint32
 }
+
+const (
+	RDONLY = 1 << iota
+	HIDDEN
+	SYSTEM
+	VOLUME_LABEL
+	DIRECTORY
+	ARCHIVE
+	DEVICE
+)

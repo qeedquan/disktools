@@ -14,7 +14,7 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix("fatimg: ")
 
-	offset := flag.Int64("o", 0, "offset to start reading")
+	offset := flag.Int64("o", 0x7e00, "offset to start reading")
 	flag.Usage = usage
 	flag.Parse()
 	if flag.NArg() < 1 {
