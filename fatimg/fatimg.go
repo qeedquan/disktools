@@ -14,6 +14,7 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix("fatimg: ")
 
+	case_ := flag.Bool("c", false, "case sensitive")
 	offset := flag.Int64("o", 0x7e00, "offset to start reading")
 	flag.Usage = usage
 	flag.Parse()
@@ -25,7 +26,10 @@ func main() {
 	ck(err)
 
 	rw := iod.NewORW(fd, *offset)
-	_, err = fat.NewFileSystem(rw)
+	opt := &fat.FileSystemOptions{
+		Case: *case_,
+	}
+	_, err = fat.NewFileSystem(rw, opt)
 	ck(err)
 }
 

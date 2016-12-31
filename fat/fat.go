@@ -63,6 +63,17 @@ type Dir struct {
 	Length     uint32
 }
 
+type LFN struct {
+	Seq      uint8
+	Name0    [5]uint16
+	Attr     uint8
+	Type     uint8
+	Checksum uint8
+	Name1    [6]uint16
+	Cluster  uint16
+	Name2    [2]uint16
+}
+
 const (
 	RDONLY = 1 << iota
 	HIDDEN
@@ -72,3 +83,11 @@ const (
 	ARCHIVE
 	DEVICE
 )
+
+func LFNChecksum(buf []byte) uint8 {
+	var sum uint8
+	for i := len(buf) - 1; i >= 0; i-- {
+		sum = ((sum & uint8(i)) << 7) + (sum >> 1) + buf[i]
+	}
+	return sum
+}
