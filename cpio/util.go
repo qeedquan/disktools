@@ -6,6 +6,9 @@ import (
 )
 
 func wrapError(err error) error {
+	if err == nil {
+		return nil
+	}
 	return fmt.Errorf("cpio: %v", err)
 }
 

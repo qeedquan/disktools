@@ -29,7 +29,7 @@ func NewWriter(w io.Writer) *Writer {
 func (cw *Writer) Close() error {
 	cw.flushFile()
 	cw.writeTrailer()
-	return cw.b.Flush()
+	return wrapError(cw.b.Flush())
 }
 
 func (cw *Writer) flushFile() {
@@ -54,7 +54,7 @@ func (cw *Writer) Write(b []byte) (int, error) {
 
 	n, err := cw.b.Write(b)
 	cw.wn += n
-	return n, err
+	return n, wrapError(err)
 }
 
 func (cw *Writer) WriteHeader(hdr *Header) error {
