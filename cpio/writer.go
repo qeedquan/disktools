@@ -27,11 +27,12 @@ func NewWriter(w io.Writer) *Writer {
 }
 
 func (cw *Writer) Close() error {
-	cw.flush()
+	cw.flushFile()
+	cw.writeTrailer()
 	return cw.b.Flush()
 }
 
-func (cw *Writer) flush() {
+func (cw *Writer) flushFile() {
 	if cw.wn <= 0 {
 		return
 	}
@@ -57,7 +58,7 @@ func (cw *Writer) Write(b []byte) (int, error) {
 }
 
 func (cw *Writer) WriteHeader(hdr *Header) error {
-	cw.flush()
+	cw.flushFile()
 
 	h := hdrnewc{
 		Magic: [6]byte{'0', '7', '0', '7', '0', '1'},
@@ -76,4 +77,14 @@ func (cw *Writer) WriteHeader(hdr *Header) error {
 	cw.b.Write(zeroes[:pad])
 
 	return nil
+}
+
+func (cw *Writer) writeTrailer() {
+	h := hdrnewc{
+		Magic:  [6]byte{'0', '7', '0', '7', '0', '1'},
+		Namesz: [8]byte{'0', '0', '0', '0', '0', '0', '0', 'B'},
+	}
+	binary.Write(cw.b, binary.LittleEndian, &h)
+	cw.b.Write([]byte("TRAILER!!!\x00"))
+	cw.b.Write([]byte{0, 0, 0})
 }
