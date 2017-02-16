@@ -1,19 +1,12 @@
 package uimage
 
-type Header struct {
-	Magic uint32
-	CRC   uint32
-	Time  uint32
-	Size  uint32
-	Load  uint32
-	Entry uint32
-	DCRC  uint32
-	OS    uint8
-	Arch  uint8
-	Type  uint8
-	Comp  uint8
-	Name  [32]byte
-}
+import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+)
 
 const (
 	COMP_NONE  = iota // No	  Compression Used
@@ -120,3 +113,88 @@ const (
 	OS_OPENRTOS         // OpenRTOS
 	OS_COUNT
 )
+
+type Header struct {
+	Magic uint32
+	CRC   uint32
+	Time  uint32
+	Size  uint32
+	Load  uint32
+	Entry uint32
+	DCRC  uint32
+	OS    uint8
+	Arch  uint8
+	Type  uint8
+	Comp  uint8
+	Name  [32]byte
+}
+
+type File struct {
+	Header
+	Off int64
+	r   io.ReaderAt
+}
+
+func (f *File) Open() io.Reader {
+	return io.NewSectionReader(f.r, f.Off, int64(f.Size))
+}
+
+type Reader struct {
+	File []*File
+}
+
+var (
+	ErrHeader = errors.New("uimage: invalid header")
+)
+
+const magic = 0x27051956
+
+func Open(r io.ReaderAt) (*Reader, error) {
+	sr := io.NewSectionReader(r, 0, math.MaxInt32)
+
+	var h Header
+	err := binary.Read(sr, binary.BigEndian, &h)
+	if err != nil {
+		return nil, wrapError(err)
+	}
+
+	if h.Magic != magic {
+		return nil, ErrHeader
+	}
+
+	pr := &Reader{}
+	pr.File = append(pr.File, &File{
+		Header: h,
+		Off:    64,
+		r:      r,
+	})
+
+	if h.Type == TYPE_MULTI {
+		var length uint32
+		for {
+			err = binary.Read(sr, binary.BigEndian, &length)
+			if err != nil {
+				return nil, wrapError(err)
+			}
+			if length == 0 {
+				break
+			}
+			pr.File = append(pr.File, &File{
+				Header: Header{Size: length},
+				r:      r,
+			})
+		}
+		for i := range pr.File {
+			pr.File[i].Off = 64 + 4*int64(len(pr.File))
+		}
+	}
+
+	return pr, nil
+}
+
+func wrapError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("uimage: %v", err)
+}
