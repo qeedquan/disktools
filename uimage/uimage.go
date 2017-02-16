@@ -183,6 +183,7 @@ func Open(r io.ReaderAt) ([]*File, error) {
 			})
 			off += int64(length)
 		}
+		files[0].Off = 0
 		for _, f := range files {
 			f.Off += 64 + 4*int64(len(files))
 		}
