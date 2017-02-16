@@ -44,7 +44,7 @@ func (cw *Writer) flushFile() {
 }
 
 func (cw *Writer) Write(b []byte) (int, error) {
-	if cw.wn > math.MaxInt32 {
+	if cw.wn > math.MaxUint32 {
 		return 0, ErrTooLarge
 	}
 
