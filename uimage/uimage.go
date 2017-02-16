@@ -1,6 +1,7 @@
 package uimage
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -115,28 +116,24 @@ const (
 )
 
 type Header struct {
-	Magic uint32
-	CRC   uint32
-	Time  uint32
-	Size  uint32
-	Load  uint32
-	Entry uint32
-	DCRC  uint32
-	OS    uint8
-	Arch  uint8
-	Type  uint8
-	Comp  uint8
-	Name  [32]byte
+	Magic  uint32
+	CRC    uint32
+	Time   uint32
+	Filesz uint32
+	Load   uint32
+	Entry  uint32
+	DCRC   uint32
+	OS     uint8
+	Arch   uint8
+	Type   uint8
+	Comp   uint8
+	Name   [32]byte
 }
 
 type File struct {
+	*io.SectionReader
 	Header
 	Off int64
-	r   io.ReaderAt
-}
-
-func (f *File) Open() io.Reader {
-	return io.NewSectionReader(f.r, f.Off, int64(f.Size))
 }
 
 type Reader struct {
@@ -149,7 +146,7 @@ var (
 
 const magic = 0x27051956
 
-func Open(r io.ReaderAt) (*Reader, error) {
+func Open(r io.ReaderAt) ([]*File, error) {
 	sr := io.NewSectionReader(r, 0, math.MaxInt32)
 
 	var h Header
@@ -162,15 +159,15 @@ func Open(r io.ReaderAt) (*Reader, error) {
 		return nil, ErrHeader
 	}
 
-	pr := &Reader{}
-	pr.File = append(pr.File, &File{
+	var files []*File
+	files = append(files, &File{
 		Header: h,
 		Off:    64,
-		r:      r,
 	})
 
 	if h.Type == TYPE_MULTI {
 		var length uint32
+		var off int64
 		for {
 			err = binary.Read(sr, binary.BigEndian, &length)
 			if err != nil {
@@ -179,17 +176,46 @@ func Open(r io.ReaderAt) (*Reader, error) {
 			if length == 0 {
 				break
 			}
-			pr.File = append(pr.File, &File{
-				Header: Header{Size: length},
-				r:      r,
+
+			files = append(files, &File{
+				Header: Header{Filesz: length},
+				Off:    off,
 			})
+			off += int64(length)
 		}
-		for i := range pr.File {
-			pr.File[i].Off = 64 + 4*int64(len(pr.File))
+		for _, f := range files {
+			f.Off += 64 + 4*int64(len(files))
 		}
 	}
 
-	return pr, nil
+	for _, f := range files {
+		f.SectionReader = io.NewSectionReader(r, f.Off, int64(f.Filesz))
+	}
+
+	return files, nil
+}
+
+func Write(w io.Writer, files []*File) error {
+	if len(files) == 0 {
+		return nil
+	}
+
+	b := bufio.NewWriter(w)
+
+	binary.Write(b, binary.BigEndian, &files[0].Header)
+	if len(files) > 0 {
+		for _, f := range files[1:] {
+			binary.Write(b, binary.BigEndian, f.Filesz)
+		}
+		binary.Write(b, binary.BigEndian, uint32(0))
+	}
+
+	for _, f := range files {
+		f.Seek(0, io.SeekStart)
+		io.Copy(b, f)
+	}
+
+	return wrapError(b.Flush())
 }
 
 func wrapError(err error) error {
