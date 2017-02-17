@@ -384,3 +384,21 @@ func splitPath(path string) []string {
 	}
 	return toks
 }
+
+func (fs *FileSystem) String() string {
+	b := new(bytes.Buffer)
+	fmt.Fprintf(b, "Type:           FAT%d\n", fs.fatbits)
+	fmt.Fprintf(b, "Sector size:    %d\n", fs.sectsz)
+	fmt.Fprintf(b, "Cluster size:   %d\n", fs.clustsz)
+	fmt.Fprintf(b, "Reserved:       %d\n", fs.nresrv)
+	fmt.Fprintf(b, "Number of FATs: %d\n", fs.nfats)
+	fmt.Fprintf(b, "Root size:      %d\n", fs.rootsz)
+	fmt.Fprintf(b, "Volume size:    %d\n", fs.volsz)
+	fmt.Fprintf(b, "FAT address:    %d\n", fs.fataddr)
+	fmt.Fprintf(b, "FAT size:       %d\n", fs.fatsz)
+	fmt.Fprintf(b, "Data address:   %d\n", fs.dataaddr)
+	fmt.Fprintf(b, "Root address:   %d\n", fs.rootaddr)
+	fmt.Fprintf(b, "Root offset:    %d\n", fs.rootstart)
+	fmt.Fprintf(b, "FAT cluster:    %d", fs.fatclusters)
+	return b.String()
+}
