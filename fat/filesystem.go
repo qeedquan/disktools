@@ -44,6 +44,8 @@ type FileSystem struct {
 	rootaddr    int64
 	rootstart   int64
 	fatclusters int64
+	label       string
+	fstype      string
 
 	rootdir File
 }
@@ -57,6 +59,7 @@ type File struct {
 	dir    Dir
 	sect   int64
 	dirpos int64
+	direof bool
 	off    int64
 	fs     *FileSystem
 }
@@ -105,12 +108,18 @@ func (f *File) Seek(off int64, whence int) (int64, error) {
 	}
 
 	f.off = off
+	if off == 0 {
+		f.direof = false
+	}
 	return off, nil
 }
 
 func (f *File) Readdir(n int) ([]os.FileInfo, error) {
 	if !f.IsDir() {
 		return nil, &os.PathError{"readdir", f.name, ErrNotDir}
+	}
+	if f.direof {
+		return nil, io.EOF
 	}
 
 	var lfns []LFN
@@ -127,7 +136,8 @@ func (f *File) Readdir(n int) ([]os.FileInfo, error) {
 		}
 
 		if buf[0] == 0 {
-			return fis, io.EOF
+			f.direof = true
+			return fis, nil
 		}
 
 		bp := bytes.NewReader(buf[:])
@@ -177,7 +187,6 @@ func (f *File) Readdir(n int) ([]os.FileInfo, error) {
 
 		f.dirpos = dp
 	}
-
 	return fis, nil
 }
 
@@ -236,11 +245,15 @@ func NewFileSystem(rw iod.RW, opt *FileSystemOptions) (*FileSystem, error) {
 				}
 			}
 		}
+		fs.label = strings.TrimRight(string(pbs.Label[:]), "\x00")
+		fs.fstype = strings.TrimRight(string(pbs.Fstype[:]), "\x00")
 	} else {
 		fs.rootaddr = fs.fataddr + fs.nfats*fs.fatsz
 		i := fs.rootsz*fatDirsz + fs.sectsz - 1
 		i /= fs.sectsz
 		fs.dataaddr = fs.rootaddr + i
+		fs.label = strings.TrimRight(string(pbs.Label[:]), "\x00")
+		fs.fstype = strings.TrimRight(string(pbs.Fstype[:]), "\x00")
 	}
 	fs.fatclusters = fs.nresrv + (fs.volsz-fs.dataaddr)/fs.clustsz
 
@@ -307,6 +320,10 @@ func (fs *FileSystem) Open(name string) (*File, error) {
 
 	f := &File{}
 	*f = fs.rootdir
+	if name == "/" {
+		return f, nil
+	}
+
 	p := splitPath(name)
 	for i := len(p) - 1; i >= 0; i-- {
 	loop:
@@ -388,6 +405,12 @@ func splitPath(path string) []string {
 func (fs *FileSystem) String() string {
 	b := new(bytes.Buffer)
 	fmt.Fprintf(b, "Type:           FAT%d\n", fs.fatbits)
+	if fs.label != "" {
+		fmt.Fprintf(b, "Label:          %s\n", fs.label)
+	}
+	if fs.fstype != "" {
+		fmt.Fprintf(b, "FS Type:        %s\n", fs.fstype)
+	}
 	fmt.Fprintf(b, "Sector size:    %d\n", fs.sectsz)
 	fmt.Fprintf(b, "Cluster size:   %d\n", fs.clustsz)
 	fmt.Fprintf(b, "Reserved:       %d\n", fs.nresrv)

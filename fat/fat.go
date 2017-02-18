@@ -24,27 +24,33 @@ type PBS struct {
 }
 
 type PBS32 struct {
-	Magic      [3]uint8
-	Version    [8]uint8
-	Sectsz     uint16
-	Clustsz    uint8
-	Resrv      uint16
-	NumFats    uint8
-	Rootsz     uint16
-	Volsz      uint16
-	Mediadesc  uint8
-	Fatsz      uint16
-	Trksz      uint16
-	Heads      uint16
-	Hidden     uint32
-	Bigvolsz   uint32
-	Fatsz32    uint32
-	Extflags   uint16
-	Version1   uint16
-	Rootstart  uint32
-	Infospec   uint16
-	Backupboot uint16
-	_          [12]uint8
+	Magic        [3]uint8
+	Version      [8]uint8
+	Sectsz       uint16
+	Clustsz      uint8
+	Resrv        uint16
+	NumFats      uint8
+	Rootsz       uint16
+	Volsz        uint16
+	Mediadesc    uint8
+	Fatsz        uint16
+	Trksz        uint16
+	Heads        uint16
+	Hidden       uint32
+	Bigvolsz     uint32
+	Fatsz32      uint32
+	Extflags     uint16
+	Version1     uint16
+	Rootstart    uint32
+	Infospec     uint16
+	Backupboot   uint16
+	_            [12]uint8
+	PhysDrive    uint8
+	Flags        uint8
+	ExtendedBoot uint8
+	VolumeSerial uint32
+	Label        [11]byte
+	Fstype       [8]byte
 }
 
 type Dir struct {
