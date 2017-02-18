@@ -55,13 +55,14 @@ type FileSystemOptions struct {
 }
 
 type File struct {
-	name   string
-	dir    Dir
-	sect   int64
-	dirpos int64
-	direof bool
-	off    int64
-	fs     *FileSystem
+	name     string
+	dir      Dir
+	sect     int64
+	dirstart int64
+	dirpos   int64
+	direof   bool
+	off      int64
+	fs       *FileSystem
 }
 
 func (f *File) Name() string     { return f.name }
@@ -95,6 +96,8 @@ func (f *File) Mode() os.FileMode {
 func (f *File) Seek(off int64, whence int) (int64, error) {
 	switch whence {
 	case io.SeekStart:
+		f.dirpos = f.dirstart
+		f.direof = false
 	case io.SeekCurrent:
 		off += f.off
 	case io.SeekEnd:
@@ -108,9 +111,6 @@ func (f *File) Seek(off int64, whence int) (int64, error) {
 	}
 
 	f.off = off
-	if off == 0 {
-		f.direof = false
-	}
 	return off, nil
 }
 
@@ -265,9 +265,10 @@ func NewFileSystem(rw iod.RW, opt *FileSystemOptions) (*FileSystem, error) {
 		}
 	}
 	fs.rootdir = File{
-		name:   "/",
-		sect:   fs.rootaddr * fs.sectsz,
-		dirpos: fs.rootaddr * fs.sectsz,
+		name:     "/",
+		sect:     fs.rootaddr * fs.sectsz,
+		dirstart: fs.rootaddr * fs.sectsz,
+		dirpos:   fs.rootaddr * fs.sectsz,
 		dir: Dir{
 			Name: [8]byte{'/'},
 			Attr: DIRECTORY,
