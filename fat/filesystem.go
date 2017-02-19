@@ -19,6 +19,7 @@ import (
 
 var (
 	ErrNotDir = errors.New("not a directory")
+	ErrIsDir  = errors.New("is a directory")
 )
 
 const (
@@ -55,14 +56,20 @@ type FileSystemOptions struct {
 }
 
 type File struct {
-	name     string
-	dir      Dir
-	sect     int64
-	dirstart int64
-	dirpos   int64
-	direof   bool
-	off      int64
-	fs       *FileSystem
+	fs        *FileSystem
+	name      string
+	dir       Dir
+	sect      int64
+	dirstart  int64
+	dirpos    int64
+	datastart int64
+	datapos   int64
+	off       int64
+	clusters  [][]int64
+}
+
+func (f *File) Stat() (os.FileInfo, error) {
+	return f, nil
 }
 
 func (f *File) Name() string     { return f.name }
@@ -97,7 +104,6 @@ func (f *File) Seek(off int64, whence int) (int64, error) {
 	switch whence {
 	case io.SeekStart:
 		f.dirpos = f.dirstart
-		f.direof = false
 	case io.SeekCurrent:
 		off += f.off
 	case io.SeekEnd:
@@ -114,12 +120,16 @@ func (f *File) Seek(off int64, whence int) (int64, error) {
 	return off, nil
 }
 
+func (f *File) Read(b []byte) (int, error) {
+	if f.dir.Attr&DIRECTORY != 0 {
+		return 0, &os.PathError{"read", f.name, ErrIsDir}
+	}
+	return 0, nil
+}
+
 func (f *File) Readdir(n int) ([]os.FileInfo, error) {
 	if !f.IsDir() {
 		return nil, &os.PathError{"readdir", f.name, ErrNotDir}
-	}
-	if f.direof {
-		return nil, io.EOF
 	}
 
 	var lfns []LFN
@@ -136,8 +146,10 @@ func (f *File) Readdir(n int) ([]os.FileInfo, error) {
 		}
 
 		if buf[0] == 0 {
-			f.direof = true
-			return fis, nil
+			if len(fis) == 0 {
+				return nil, io.EOF
+			}
+			break
 		}
 
 		bp := bytes.NewReader(buf[:])
@@ -175,11 +187,18 @@ func (f *File) Readdir(n int) ([]os.FileInfo, error) {
 				name = strings.ToLower(name)
 			}
 
+			clusternum := int64(dir.Start)
+			if f.fs.fatbits == 32 {
+				clusternum |= int64(uint64(dir.Hstart) << 16)
+			}
+
 			fis = append(fis, &File{
-				name:   name,
-				sect:   dp,
-				dirpos: dp,
-				dir:    dir,
+				fs:       f.fs,
+				name:     name,
+				sect:     dp,
+				dirpos:   dp,
+				dir:      dir,
+				clusters: f.fs.getClusters(clusternum),
 			})
 
 			i++
@@ -425,4 +444,58 @@ func (fs *FileSystem) String() string {
 	fmt.Fprintf(b, "Root offset:    %d\n", fs.rootstart)
 	fmt.Fprintf(b, "FAT cluster:    %d", fs.fatclusters)
 	return b.String()
+}
+
+func (fs *FileSystem) getClusters(num int64) (clusters [][]int64) {
+	for i := int64(0); i < fs.nfats; i++ {
+		var cluster []int64
+		var err error
+		switch fs.fatbits {
+		case 12:
+			cluster, err = fs.getCluster12(i, num)
+		case 16:
+			cluster, err = fs.getCluster16or32(i, num, 2)
+		case 32:
+			cluster, err = fs.getCluster16or32(i, num, 4)
+		}
+		if err != nil {
+			cluster = append(cluster, -1)
+		}
+		clusters = append(clusters, cluster)
+	}
+	return
+}
+
+func (fs *FileSystem) getCluster12(bank, num int64) (cluster []int64, err error) {
+	return
+}
+
+func (fs *FileSystem) getCluster16or32(bank, num, bits int64) (cluster []int64, err error) {
+	off := num * bits
+	limit := fs.fatsz * fs.sectsz
+	if off >= limit {
+		err = fmt.Errorf("invalid cluster index %d", num)
+		return
+	}
+
+	addr := (fs.fataddr+fs.fatsz*bank)*fs.sectsz + off
+	sr := io.NewSectionReader(fs.rw, addr, limit-off)
+
+	var b [4]byte
+	for {
+		_, err = io.ReadAtLeast(sr, b[:bits], int(bits))
+		if err != nil {
+			return
+		}
+
+		v := int64(0)
+		for i := int64(0); i < bits; i++ {
+			v |= int64(b[i])
+			v <<= 8
+		}
+		if v >= 0xff8 {
+			return
+		}
+		cluster = append(cluster, v)
+	}
 }
