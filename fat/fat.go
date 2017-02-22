@@ -62,10 +62,10 @@ type Dir struct {
 	Ctime      uint16
 	Cdate      uint16
 	Adate      uint16
-	Hstart     uint16
+	Cluster32  uint16
 	Time       uint16
 	Date       uint16
-	Start      uint16
+	Cluster    uint16
 	Length     uint32
 }
 
