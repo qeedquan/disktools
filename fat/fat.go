@@ -4,7 +4,7 @@ type PBS struct {
 	Magic     [3]uint8
 	Version   [8]uint8
 	Sectsz    uint16
-	Clustsz   uint8
+	Clustersz uint8
 	Resrv     uint16
 	NumFats   uint8
 	Rootsz    uint16
