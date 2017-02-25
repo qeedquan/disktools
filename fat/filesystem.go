@@ -134,7 +134,7 @@ func (f *File) Read(b []byte) (int, error) {
 
 	var n int
 	var err error
-	for n < len(b) {
+	for n < len(b) && int64(n) < int64(f.dir.Length) {
 		if f.filepos >= f.fs.clustersz*f.fs.sectsz {
 			f.clusterpos++
 			f.filepos = 0
@@ -142,8 +142,18 @@ func (f *File) Read(b []byte) (int, error) {
 
 		off := f.fileAddr(f.clusterpos, f.filepos)
 		sr := io.NewSectionReader(f.fs.rw, off, math.MaxUint32)
-		nr, err := sr.Read(b[n:])
+
+		m := len(b) - n
+		if int64(f.dir.Length)-int64(n) < int64(m) {
+			m = int(f.dir.Length) - n
+		}
+		if int64(m) > f.fs.clustersz*f.fs.sectsz {
+			m = int(f.fs.clustersz * f.fs.sectsz)
+		}
+
+		nr, err := sr.Read(b[n : n+m])
 		n += nr
+		f.filepos += int64(nr)
 		if err != nil {
 			break
 		}
@@ -179,7 +189,7 @@ func (f *File) calcClusters() {
 
 	f.clusters = f.clusters[:0]
 	for i := int64(0); i < f.fs.nfats; i++ {
-		clusters := []int64{cluster}
+		var clusters []int64
 		switch f.fs.fatbits {
 		case 12:
 			clusters = append(clusters, f.getClusters12(i, cluster)...)
@@ -194,6 +204,8 @@ func (f *File) calcClusters() {
 func (f *File) getClusters12(fatnum, cluster int64) (clusters []int64) {
 	seen := make(map[uint16]bool)
 	for {
+		clusters = append(clusters, cluster)
+
 		addr := (f.fs.fataddr+fatnum*f.fs.fatsz)*f.fs.sectsz + cluster + (cluster / 2)
 		sr := io.NewSectionReader(f.fs.rw, addr, math.MaxUint32)
 
@@ -209,7 +221,6 @@ func (f *File) getClusters12(fatnum, cluster int64) (clusters []int64) {
 			break
 		}
 
-		clusters = append(clusters, cluster)
 		cluster = int64(v)
 		seen[v] = true
 	}
@@ -219,6 +230,8 @@ func (f *File) getClusters12(fatnum, cluster int64) (clusters []int64) {
 func (f *File) getClusters16or32(fatnum, cluster, bits int64) (clusters []int64) {
 	seen := make(map[int64]bool)
 	for {
+		clusters = append(clusters, cluster)
+
 		addr := (f.fs.fataddr+fatnum*f.fs.fatsz)*f.fs.sectsz + cluster*(bits/8)
 		sr := io.NewSectionReader(f.fs.rw, addr, math.MaxUint32)
 
@@ -237,7 +250,6 @@ func (f *File) getClusters16or32(fatnum, cluster, bits int64) (clusters []int64)
 			break
 		}
 
-		clusters = append(clusters, v)
 		cluster = v
 		seen[v] = true
 	}
