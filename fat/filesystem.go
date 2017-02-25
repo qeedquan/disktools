@@ -217,7 +217,7 @@ func (f *File) getClusters12(fatnum, cluster int64) (clusters []int64) {
 			v &= 0xfff
 		}
 
-		if err != nil || v >= 0xff8 || seen[v] {
+		if err != nil || v >= 0xff7 || seen[v] {
 			break
 		}
 
@@ -241,12 +241,18 @@ func (f *File) getClusters16or32(fatnum, cluster, bits int64) (clusters []int64)
 			var u uint16
 			err = binary.Read(sr, binary.LittleEndian, &u)
 			v = int64(u)
+			if v >= 0xfff7 {
+				break
+			}
 		} else {
 			var u uint32
 			err = binary.Read(sr, binary.LittleEndian, &u)
-			v = int64(u)
+			v = int64(u) & 0x1fffffff
+			if v >= 0x0FFFFFF7 {
+				break
+			}
 		}
-		if err != nil || v >= 0xff8 || seen[v] {
+		if err != nil || seen[v] {
 			break
 		}
 
