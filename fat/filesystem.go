@@ -176,6 +176,10 @@ func (f *File) Read(b []byte) (int, error) {
 	return n, err
 }
 
+func (f *File) Write(b []byte) (int, error) {
+	return 0, nil
+}
+
 func (f *File) fileAddr(n, off int64) int64 {
 	cluster := int64(-1)
 	for _, p := range f.clusters {
@@ -260,8 +264,8 @@ func (f *File) getClusters16or32(fatnum, cluster, bits int64) (clusters []int64)
 		} else {
 			var u uint32
 			err = binary.Read(sr, binary.LittleEndian, &u)
-			v = int64(u) & 0x1fffffff
-			if v >= 0x0FFFFFF7 {
+			v = int64(u) & 0x7ffffff
+			if v >= 0xffffff7 {
 				break
 			}
 		}
@@ -490,7 +494,65 @@ func (fs *FileSystem) Chdir(dir string) error {
 	return nil
 }
 
+func (fs *FileSystem) Stat(name string) (os.FileInfo, error) {
+	return fs.Open(name)
+}
+
+func (fs *FileSystem) Lstat(name string) (os.FileInfo, error) {
+	return fs.Open(name)
+}
+
+func (fs *FileSystem) Mkdir(name string, perm os.FileMode) error {
+	return nil
+}
+
+func (fs *FileSystem) MkdirAll(path string, perm os.FileMode) error {
+	dir, err := fs.Stat(path)
+	if err == nil {
+		if dir.IsDir() {
+			return nil
+		}
+		return &os.PathError{"mkdir", path, ErrNotDir}
+	}
+
+	i := len(path)
+	for i > 0 && IsPathSeparator(path[i-1]) {
+		i--
+	}
+
+	j := i
+	for j > 0 && !IsPathSeparator(path[j-1]) {
+		j--
+	}
+
+	if j > 1 {
+		err = fs.MkdirAll(path[0:j-1], perm)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = fs.Mkdir(path, perm)
+	if err != nil {
+		dir, err1 := fs.Lstat(path)
+		if err1 == nil && dir.IsDir() {
+			return nil
+		}
+		return err
+	}
+	return nil
+
+}
+
 func (fs *FileSystem) Open(name string) (*File, error) {
+	return fs.OpenFile(name, os.O_RDONLY, 0)
+}
+
+func (fs *FileSystem) Create(name string) (*File, error) {
+	return fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+}
+
+func (fs *FileSystem) OpenFile(name string, flag int, perm os.FileMode) (*File, error) {
 	if stdpath.IsAbs(name) {
 		name = stdpath.Clean(name)
 	} else {
@@ -603,4 +665,12 @@ func (fs *FileSystem) String() string {
 	fmt.Fprintf(b, "Root offset:    %d\n", fs.rootstart)
 	fmt.Fprintf(b, "FAT cluster:    %d", fs.fatclusters)
 	return b.String()
+}
+
+const (
+	PathSeparator = '/'
+)
+
+func IsPathSeparator(c uint8) bool {
+	return PathSeparator == c
 }
