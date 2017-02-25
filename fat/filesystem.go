@@ -118,6 +118,8 @@ func (f *File) Seek(off int64, whence int) (int64, error) {
 		return 0, os.ErrInvalid
 	}
 
+	f.clusterpos = off / (f.fs.clustersz * f.fs.sectsz)
+	f.filepos = off % (f.fs.clustersz * f.fs.sectsz)
 	f.off = off
 	return off, nil
 }
@@ -130,13 +132,31 @@ func (f *File) Read(b []byte) (int, error) {
 		return 0, io.EOF
 	}
 
-	return 0, nil
+	var n int
+	var err error
+	for n < len(b) {
+		if f.filepos >= f.fs.clustersz*f.fs.sectsz {
+			f.clusterpos++
+			f.filepos = 0
+		}
+
+		off := f.fileAddr(f.clusterpos, f.filepos)
+		sr := io.NewSectionReader(f.fs.rw, off, math.MaxUint32)
+		nr, err := sr.Read(b[n:])
+		n += nr
+		if err != nil {
+			break
+		}
+	}
+
+	f.off += int64(n)
+	return n, err
 }
 
 func (f *File) fileAddr(n, off int64) int64 {
 	cluster := int64(-1)
 	for _, p := range f.clusters {
-		if int64(len(p)) > n {
+		if int64(len(p)) > n && p[n] < 0xff7 {
 			cluster = p[n]
 			break
 		}
@@ -172,33 +192,32 @@ func (f *File) calcClusters() {
 }
 
 func (f *File) getClusters12(fatnum, cluster int64) (clusters []int64) {
+	seen := make(map[uint16]bool)
 	for {
 		addr := (f.fs.fataddr+fatnum*f.fs.fatsz)*f.fs.sectsz + cluster + (cluster / 2)
 		sr := io.NewSectionReader(f.fs.rw, addr, math.MaxUint32)
 
 		var v uint16
 		err := binary.Read(sr, binary.LittleEndian, &v)
-		if err != nil {
-			break
-		}
-
 		if cluster&0x1 != 0 {
 			v >>= 4
 		} else {
 			v &= 0xfff
 		}
-		if v >= 0xff8 {
+
+		if err != nil || v >= 0xff8 || seen[v] {
 			break
 		}
 
 		clusters = append(clusters, cluster)
 		cluster = int64(v)
+		seen[v] = true
 	}
-	fmt.Println(clusters)
 	return
 }
 
 func (f *File) getClusters16or32(fatnum, cluster, bits int64) (clusters []int64) {
+	seen := make(map[int64]bool)
 	for {
 		addr := (f.fs.fataddr+fatnum*f.fs.fatsz)*f.fs.sectsz + cluster*(bits/8)
 		sr := io.NewSectionReader(f.fs.rw, addr, math.MaxUint32)
@@ -214,14 +233,13 @@ func (f *File) getClusters16or32(fatnum, cluster, bits int64) (clusters []int64)
 			err = binary.Read(sr, binary.LittleEndian, &u)
 			v = int64(u)
 		}
-		if err != nil {
+		if err != nil || v >= 0xff8 || seen[v] {
 			break
 		}
-		if v >= 0xff8 {
-			break
-		}
+
 		clusters = append(clusters, v)
 		cluster = v
+		seen[v] = true
 	}
 	return
 }
