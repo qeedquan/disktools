@@ -59,6 +59,7 @@ type File struct {
 	fs         *FileSystem
 	name       string
 	dir        Dir
+	dirstart   int64
 	startpos   int64
 	clusterpos int64
 	dirpos     int64
@@ -67,9 +68,7 @@ type File struct {
 	clusters   [][]int64
 }
 
-func (f *File) Stat() (os.FileInfo, error) {
-	return f, nil
-}
+func (f *File) Stat() (os.FileInfo, error) { return f, nil }
 
 func (f *File) Name() string     { return f.name }
 func (f *File) IsDir() bool      { return f.dir.Attr&DIRECTORY != 0 && f.dir.Attr != 0xF }
@@ -78,7 +77,16 @@ func (f *File) Sys() interface{} { return f }
 func (f *File) Close() error     { return nil }
 
 func (f *File) ModTime() time.Time {
-	return time.Time{}
+	d := f.dir.Date
+	t := f.dir.Time
+	year := 1980 + (d>>9)&0x7f
+	month := (d >> 5) & 0xf
+	day := d & 0x1f
+	hour := (t >> 11) & 0x1f
+	min := (t >> 5) & 0x3f
+	sec := t & 0x3f
+	return time.Date(int(year), time.Month(month), int(day), int(hour),
+		int(min), int(sec), 0, time.Local)
 }
 
 func (f *File) Mode() os.FileMode {
@@ -141,6 +149,11 @@ func (f *File) Read(b []byte) (int, error) {
 		}
 
 		off := f.fileAddr(f.clusterpos, f.filepos)
+		if off < 0 {
+			err = fmt.Errorf("encountered bad cluster %d at offset %d",
+				f.clusterpos, f.filepos)
+			break
+		}
 		sr := io.NewSectionReader(f.fs.rw, off, math.MaxUint32)
 
 		m := len(b) - n
@@ -166,7 +179,7 @@ func (f *File) Read(b []byte) (int, error) {
 func (f *File) fileAddr(n, off int64) int64 {
 	cluster := int64(-1)
 	for _, p := range f.clusters {
-		if int64(len(p)) > n && p[n] < 0xff7 {
+		if int64(len(p)) > n {
 			cluster = p[n]
 			break
 		}
@@ -285,7 +298,7 @@ func (f *File) Readdir(n int) ([]os.FileInfo, error) {
 		}
 
 		addr := f.fileAddr(f.clusterpos, f.dirpos)
-		if addr == -1 {
+		if addr < 0 {
 			return fis, fmt.Errorf("encountered invalid FAT clusters")
 		}
 		sr := io.NewSectionReader(f.fs.rw, addr, math.MaxUint32)
@@ -344,6 +357,7 @@ func (f *File) Readdir(n int) ([]os.FileInfo, error) {
 				fi := &File{
 					fs:       f.fs,
 					name:     name,
+					dirstart: addr,
 					startpos: f.fs.dataaddr,
 					dir:      dir,
 				}
