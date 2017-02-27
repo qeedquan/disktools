@@ -2,11 +2,13 @@ package fdt
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"strings"
 )
 
 type Header struct {
@@ -23,6 +25,7 @@ type Header struct {
 }
 
 type Node struct {
+	Name string
 	Prop []Prop
 	Next *Node
 }
@@ -40,7 +43,8 @@ type Reserve struct {
 type File struct {
 	Header
 	Reserves []Reserve
-	Nodes    []*Node
+	Root     *Node
+	Strings  map[int64]string
 }
 
 const (
@@ -84,10 +88,29 @@ func Decode(r io.ReaderAt) (*File, error) {
 		resrvs = append(resrvs, resrv)
 	}
 
-	sr.Seek(int64(hdr.StructOff), io.SeekStart)
-	lr := &io.LimitedReader{sr, int64(hdr.StructSize)}
+	var stringtab = make(map[int64]string)
+	sr.Seek(int64(hdr.StringsOff), io.SeekStart)
+	lr := &io.LimitedReader{sr, int64(hdr.StringsSize)}
 	br := bufio.NewReader(lr)
+	off := int64(0)
+	for {
+		str, nr, err := readString(br)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, wrapError(err)
+		}
+		stringtab[off] = str
+		off += int64(nr)
+	}
 
+	sr.Seek(int64(hdr.StructOff), io.SeekStart)
+	lr = &io.LimitedReader{sr, int64(hdr.StructSize)}
+	br = bufio.NewReader(lr)
+
+	var root, cur *Node
+	var link int
 loop:
 	for {
 		var typ uint32
@@ -98,18 +121,112 @@ loop:
 
 		switch typ {
 		case BEGIN_NODE:
+			next := &Node{}
+			next.Name, _, err = readString(br)
+			if err != nil {
+				return nil, wrapError(err)
+			}
+			if root == nil {
+				root, cur = next, next
+			} else {
+				cur.Next, cur = next, next
+			}
+			link++
+
 		case END_NODE:
+			if link--; link < 0 {
+				return nil, fmt.Errorf("fdt: unbalanced begin_node/end_node token")
+			}
+
 		case PROP:
+			prop, err := readProp(br)
+			if err != nil {
+				return nil, wrapError(err)
+			}
+			cur.Prop = append(cur.Prop, prop)
+
 		case NOP:
+
 		case END:
 			break loop
+
+		default:
+			return nil, fmt.Errorf("fdt: unknown node type %#x", typ)
 		}
+
+		_, err = skipPadding(br)
+		if err != nil {
+			return nil, wrapError(err)
+		}
+	}
+	if link != 0 {
+		return nil, fmt.Errorf("fdt: unbalanced begin_node/end_node token")
 	}
 
 	return &File{
 		Header:   hdr,
 		Reserves: resrvs,
+		Root:     root,
+		Strings:  stringtab,
 	}, nil
+}
+
+func readString(b *bufio.Reader) (string, int, error) {
+	p := new(bytes.Buffer)
+	n := 0
+	for {
+		ch, sz, err := b.ReadRune()
+		if err != nil {
+			return p.String(), n, err
+		}
+		n += sz
+		if ch == 0 {
+			break
+		}
+		p.WriteRune(ch)
+	}
+
+	return p.String(), n, nil
+}
+
+func readProp(b *bufio.Reader) (prop Prop, err error) {
+	var propsz [2]uint32
+	err = binary.Read(b, binary.BigEndian, &propsz)
+	if err != nil {
+		return
+	}
+
+	if propsz[0] == 0 {
+		return
+	}
+
+	buf := make([]byte, propsz[0])
+	_, err = io.ReadAtLeast(b, buf, len(buf))
+	if err != nil {
+		return
+	}
+
+	prop = Prop{
+		Value: strings.TrimRight(string(buf), "\x00"),
+	}
+
+	return
+}
+
+func skipPadding(b *bufio.Reader) (int, error) {
+	n := 0
+	for {
+		buf, err := b.Peek(1)
+		if err != nil {
+			return n, err
+		}
+		if buf[0] != 0 {
+			break
+		}
+		b.ReadByte()
+		n++
+	}
+	return n, nil
 }
 
 func WriteDTS(w io.Writer, f *File) error {
