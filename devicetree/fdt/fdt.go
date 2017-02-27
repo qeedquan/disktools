@@ -115,6 +115,15 @@ loop:
 func WriteDTS(w io.Writer, f *File) error {
 	b := bufio.NewWriter(w)
 	fmt.Fprintf(w, "/dts-v1/;\n")
+	fmt.Fprintf(w, "// magic:             %#x\n", f.Magic)
+	fmt.Fprintf(w, "// totalsize:         %#x (%d)\n", f.Size, f.Size)
+	fmt.Fprintf(w, "// off_dt_struct:     %#x\n", f.StructOff)
+	fmt.Fprintf(w, "// off_dt_strings:    %#x\n", f.StringsOff)
+	fmt.Fprintf(w, "// version:           %d\n", f.Version)
+	fmt.Fprintf(w, "// last_comp_version: %d\n", f.LastCompVersion)
+	fmt.Fprintf(w, "// boot_cpuid_phys:   %#x\n", f.BootCpuid)
+	fmt.Fprintf(w, "// size_dt_strings:   %#x\n", f.StringsSize)
+	fmt.Fprintf(w, "// size_dt_struct:    %#x\n", f.StructSize)
 	return wrapError(b.Flush())
 }
 
