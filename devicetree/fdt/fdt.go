@@ -386,7 +386,7 @@ func writeStruct(bw *bufio.Writer, node *Node, depth int) {
 		case nil:
 
 		default:
-			fmt.Fprintf(bw, " = (%T)", v)
+			fmt.Fprintf(bw, "(%T)", v)
 		}
 		fmt.Fprintf(bw, ";\n")
 	}
