@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
+	"unicode"
 )
 
 type Header struct {
@@ -32,7 +34,7 @@ type Node struct {
 
 type Prop struct {
 	Name  string
-	Value []byte
+	Value interface{}
 }
 
 type Reserve struct {
@@ -44,7 +46,7 @@ type File struct {
 	Header
 	Reserves []Reserve
 	Root     *Node
-	Strings  map[int64]string
+	Strings  []string
 }
 
 const (
@@ -88,21 +90,19 @@ func Decode(r io.ReaderAt) (*File, error) {
 		resrvs = append(resrvs, resrv)
 	}
 
-	var stringtab = make(map[int64]string)
+	var stringtab []string
 	sr.Seek(int64(hdr.StringsOff), io.SeekStart)
 	lr := &io.LimitedReader{sr, int64(hdr.StringsSize)}
 	br := bufio.NewReader(lr)
-	off := int64(0)
 	for {
-		str, nr, err := readString(br, false)
+		str, err := readString(br, false)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return nil, wrapError(err)
 		}
-		stringtab[off] = str
-		off += int64(nr)
+		stringtab = append(stringtab, str)
 	}
 
 	sr.Seek(int64(hdr.StructOff), io.SeekStart)
@@ -122,7 +122,7 @@ loop:
 		switch typ {
 		case BEGIN_NODE:
 			node := &Node{}
-			node.Name, _, err = readString(br, true)
+			node.Name, err = readString(br, true)
 			if err != nil {
 				return nil, wrapError(err)
 			}
@@ -145,7 +145,7 @@ loop:
 			if depth <= 0 {
 				return nil, fmt.Errorf("fdt: encountered prop outside of begin_node")
 			}
-			prop, err := readProp(br, stringtab)
+			prop, err := readProp(&hdr, r, br)
 			if err != nil {
 				return nil, wrapError(err)
 			}
@@ -172,13 +172,13 @@ loop:
 	}, nil
 }
 
-func readString(b *bufio.Reader, padding bool) (string, int, error) {
+func readString(br *bufio.Reader, padding bool) (string, error) {
 	p := new(bytes.Buffer)
 	n := 0
 	for {
-		ch, sz, err := b.ReadRune()
+		ch, sz, err := br.ReadRune()
 		if err != nil {
-			return p.String(), n, err
+			return p.String(), err
 		}
 		n += sz
 		if ch == 0 {
@@ -187,33 +187,105 @@ func readString(b *bufio.Reader, padding bool) (string, int, error) {
 		p.WriteRune(ch)
 	}
 
-	return p.String(), n, discardPad(padding, b, int64(n))
+	return p.String(), discardPad(padding, br, int64(n))
 }
 
-func readProp(b *bufio.Reader, tab map[int64]string) (prop Prop, err error) {
+func readProp(hdr *Header, r io.ReaderAt, br *bufio.Reader) (prop Prop, err error) {
 	var phdr struct {
 		Len     uint32
 		NameOff uint32
 	}
-	err = binary.Read(b, binary.BigEndian, &phdr)
+	err = binary.Read(br, binary.BigEndian, &phdr)
 	if err != nil {
 		return
 	}
 
 	buf := make([]byte, phdr.Len)
-	_, err = io.ReadAtLeast(b, buf, len(buf))
+	_, err = io.ReadAtLeast(br, buf, len(buf))
 	if err != nil {
 		return
 	}
 
-	prop = Prop{
-		Name:  tab[int64(phdr.NameOff)],
-		Value: buf,
+	sr := io.NewSectionReader(r, int64(hdr.StringsOff)+int64(phdr.NameOff), int64(hdr.StringsSize))
+	name, err := readString(bufio.NewReader(sr), false)
+	if err != nil {
+		return
 	}
 
-	err = discardPad(phdr.Len > 0, b, int64(phdr.Len))
+	var value interface{}
+	switch {
+	case isPrint(buf):
+		fields := strings.Split(string(buf), "\x00")
+		for i := len(fields) - 1; i >= 0; i-- {
+			if fields[i] != "" {
+				fields = fields[:i+1]
+				break
+			}
+		}
+
+		if len(fields) > 1 {
+			value = fields
+		} else {
+			value = fields[0]
+		}
+
+	case len(buf)%4 == 0:
+		if len(buf) == 0 {
+			value = nil
+			break
+		}
+
+		var v []uint32
+		for i := 0; i < len(buf); i += 4 {
+			v = append(v, read4(buf[i:]))
+		}
+		value = v
+
+	default:
+		value = buf
+	}
+
+	prop = Prop{
+		Name:  name,
+		Value: value,
+	}
+
+	err = discardPad(phdr.Len > 0, br, int64(phdr.Len))
 
 	return
+}
+
+func read4(b []byte) uint32 {
+	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
+}
+
+func isPrint(buf []byte) bool {
+	if len(buf) == 0 {
+		return false
+	}
+	if buf[len(buf)-1] != 0 {
+		return false
+	}
+
+	seen := false
+	count := 0
+	r := bytes.NewReader(buf)
+	for {
+		ch, _, err := r.ReadRune()
+		if err != nil {
+			break
+		}
+		if ch == 0 && count != 0 {
+			count = 0
+			continue
+		}
+		if !unicode.IsPrint(ch) {
+			return false
+		}
+		count++
+		seen = true
+	}
+	return seen
 }
 
 func discardPad(cond bool, b *bufio.Reader, n int64) error {
@@ -232,35 +304,35 @@ func discardPad(cond bool, b *bufio.Reader, n int64) error {
 }
 
 func WriteDTS(w io.Writer, f *File) error {
-	b := bufio.NewWriter(w)
-	fmt.Fprintf(b, "/dts-v1/;\n")
-	fmt.Fprintf(b, "// magic:             %#x\n", f.Magic)
-	fmt.Fprintf(b, "// totalsize:         %#x (%d)\n", f.Size, f.Size)
-	fmt.Fprintf(b, "// off_dt_struct:     %#x\n", f.StructOff)
-	fmt.Fprintf(b, "// off_dt_strings:    %#x\n", f.StringsOff)
-	fmt.Fprintf(b, "// version:           %d\n", f.Version)
-	fmt.Fprintf(b, "// last_comp_version: %d\n", f.LastCompVersion)
+	bw := bufio.NewWriter(w)
+	fmt.Fprintf(bw, "/dts-v1/;\n")
+	fmt.Fprintf(bw, "// magic:             %#x\n", f.Magic)
+	fmt.Fprintf(bw, "// totalsize:         %#x (%d)\n", f.Size, f.Size)
+	fmt.Fprintf(bw, "// off_dt_struct:     %#x\n", f.StructOff)
+	fmt.Fprintf(bw, "// off_dt_strings:    %#x\n", f.StringsOff)
+	fmt.Fprintf(bw, "// version:           %d\n", f.Version)
+	fmt.Fprintf(bw, "// last_comp_version: %d\n", f.LastCompVersion)
 	if f.Version >= 2 {
-		fmt.Fprintf(b, "// boot_cpuid_phys:   %#x\n", f.BootCpuid)
+		fmt.Fprintf(bw, "// boot_cpuid_phys:   %#x\n", f.BootCpuid)
 	}
 	if f.Version >= 3 {
-		fmt.Fprintf(b, "// size_dt_strings:   %#x\n", f.StringsSize)
+		fmt.Fprintf(bw, "// size_dt_strings:   %#x\n", f.StringsSize)
 	}
 	if f.Version >= 17 {
-		fmt.Fprintf(b, "// size_dt_struct:    %#x\n", f.StructSize)
+		fmt.Fprintf(bw, "// size_dt_struct:    %#x\n", f.StructSize)
 	}
 
 	for _, p := range f.Reserves {
-		fmt.Fprintf(b, "/memreserve/ %x %x\n", p.Addr, p.Size)
+		fmt.Fprintf(bw, "/memreserve/ %x %x\n", p.Addr, p.Size)
 	}
 
-	fmt.Fprintf(b, "\n")
-	writeStruct(b, f.Root, 0)
+	fmt.Fprintf(bw, "\n")
+	writeStruct(bw, f.Root, 0)
 
-	return wrapError(b.Flush())
+	return wrapError(bw.Flush())
 }
 
-func writeStruct(b *bufio.Writer, node *Node, depth int) {
+func writeStruct(bw *bufio.Writer, node *Node, depth int) {
 	const shift = 4
 
 	if node == nil {
@@ -270,17 +342,59 @@ func writeStruct(b *bufio.Writer, node *Node, depth int) {
 	if s == "" {
 		s = "/"
 	}
-	fmt.Fprintf(b, "%*s%s {\n", depth*shift, "", s)
+	fmt.Fprintf(bw, "%*s%s {\n", depth*shift, "", s)
 
 	depth++
 	for _, p := range node.Prop {
-		fmt.Fprintf(b, "%*s%s\n", depth*shift, "", p.Name)
+		fmt.Fprintf(bw, "%*s%s", depth*shift, "", p.Name)
+		if p.Value != nil {
+			fmt.Fprintf(bw, " = ")
+		}
+
+		switch v := p.Value.(type) {
+		case []string:
+			for i := range v {
+				fmt.Fprintf(bw, "%q", v[i])
+				if i+1 < len(v) {
+					fmt.Fprintf(bw, ", ")
+				}
+			}
+
+		case string:
+			fmt.Fprintf(bw, "%q", v)
+
+		case []byte:
+			fmt.Fprintf(bw, "[")
+			for i := range v {
+				fmt.Fprintf(bw, "%02x", v[i])
+				if i+1 < len(v) {
+					fmt.Fprintf(bw, " ")
+				}
+			}
+			fmt.Fprintf(bw, "]")
+
+		case []uint32:
+			fmt.Fprintf(bw, "<")
+			for i := range v {
+				fmt.Fprintf(bw, "%#08x", v[i])
+				if i+1 < len(v) {
+					fmt.Fprintf(bw, " ")
+				}
+			}
+			fmt.Fprintf(bw, ">")
+
+		case nil:
+
+		default:
+			fmt.Fprintf(bw, " = (%T)", v)
+		}
+		fmt.Fprintf(bw, ";\n")
 	}
 	for _, p := range node.Children {
-		writeStruct(b, p, depth)
+		writeStruct(bw, p, depth)
 	}
 	depth--
-	fmt.Fprintf(b, "%*s}\n", depth*shift, "")
+	fmt.Fprintf(bw, "%*s};\n", depth*shift, "")
 }
 
 func wrapError(err error) error {
