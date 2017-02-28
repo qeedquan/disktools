@@ -288,14 +288,14 @@ func isPrint(buf []byte) bool {
 	return seen
 }
 
-func discardPad(cond bool, b *bufio.Reader, n int64) error {
+func discardPad(cond bool, br *bufio.Reader, n int64) error {
 	if !cond {
 		return nil
 	}
 
 	var discard [4]byte
 	padsz := (4 - int(n)%4) % 4
-	_, err := io.ReadAtLeast(b, discard[:padsz], padsz)
+	_, err := io.ReadAtLeast(br, discard[:padsz], padsz)
 	if err != nil {
 		return err
 	}
