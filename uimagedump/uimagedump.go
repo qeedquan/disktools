@@ -67,6 +67,7 @@ func dump(name string) error {
 		}
 		_, err = io.Copy(w, p)
 		ek(err)
+		ek(w.Close())
 	}
 
 	return nil
