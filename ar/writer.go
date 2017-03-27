@@ -43,7 +43,7 @@ func (cw *Writer) WriteHeader(hdr *Header) error {
 func (cw *Writer) Write(b []byte) (int, error) {
 	if cw.wn == 0 {
 		if cw.pad > 0 {
-			n, err := cw.Write([]byte{'/'})
+			n, err := cw.Write([]byte{'\n'})
 			cw.pad = 0
 			return n, err
 		}
