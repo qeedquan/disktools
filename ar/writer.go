@@ -37,7 +37,7 @@ func (cw *Writer) WriteHeader(hdr *Header) error {
 
 	cw.wn = hdr.Size
 	cw.pad = hdr.Size & 1
-	return binary.Write(cw.b, binary.LittleEndian, &h)
+	return wk(binary.Write(cw.b, binary.LittleEndian, &h))
 }
 
 func (cw *Writer) Write(b []byte) (int, error) {
@@ -45,7 +45,7 @@ func (cw *Writer) Write(b []byte) (int, error) {
 		if cw.pad > 0 {
 			n, err := cw.Write([]byte{'\n'})
 			cw.pad = 0
-			return n, err
+			return n, wk(err)
 		}
 		return 0, io.EOF
 	}
@@ -57,5 +57,5 @@ func (cw *Writer) Write(b []byte) (int, error) {
 
 	m, err := cw.w.Write(b[:n])
 	cw.wn -= uint64(m)
-	return m, err
+	return m, wk(err)
 }
