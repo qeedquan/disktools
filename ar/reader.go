@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const magic = "!<arch>\n"
+
 var (
 	ErrHeader = errors.New("ar: invalid header")
 )
@@ -40,13 +42,13 @@ type Reader struct {
 }
 
 func NewReader(r io.Reader) (*Reader, error) {
-	var magic [8]byte
-	_, err := io.ReadAtLeast(r, magic[:], len(magic))
+	var sig [len(magic)]byte
+	_, err := io.ReadAtLeast(r, sig[:], len(sig))
 	if err != nil {
 		return nil, wk(err)
 	}
 
-	if string(magic[:]) != "!<arch>\n" {
+	if string(sig[:]) != magic {
 		return nil, ErrHeader
 	}
 

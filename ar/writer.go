@@ -19,6 +19,17 @@ type Writer struct {
 	pad uint64
 }
 
+func NewWriter(w io.Writer) (*Writer, error) {
+	_, err := w.Write([]byte(magic))
+	if err != nil {
+		return nil, err
+	}
+	return &Writer{
+		w: w,
+		b: bufio.NewWriter(w),
+	}, nil
+}
+
 func (cw *Writer) Close() error {
 	return cw.b.Flush()
 }
