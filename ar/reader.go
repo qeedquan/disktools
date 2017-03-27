@@ -15,13 +15,13 @@ var (
 )
 
 type hdro struct {
-	Name  [16]byte
-	Mtime [12]byte
-	UID   [6]byte
-	GID   [6]byte
-	Mode  [8]byte
-	Size  [10]byte
-	_     [2]byte
+	Name    [16]byte
+	Mtime   [12]byte
+	UID     [6]byte
+	GID     [6]byte
+	Mode    [8]byte
+	Size    [10]byte
+	Trailer [2]byte
 }
 
 type Header struct {

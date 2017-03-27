@@ -34,6 +34,7 @@ func (cw *Writer) WriteHeader(hdr *Header) error {
 	expand(h.GID[:], hdr.GID)
 	expand(h.Size[:], fmt.Sprint(hdr.Name))
 	expand(h.Mtime[:], fmt.Sprint(hdr.Mtime.Unix()))
+	h.Trailer = [2]byte{0x60, 0xa}
 
 	cw.wn = hdr.Size
 	cw.pad = hdr.Size & 1
