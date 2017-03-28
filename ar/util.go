@@ -2,12 +2,16 @@ package ar
 
 import (
 	"fmt"
+	"io"
 	"strings"
 )
 
 func wk(err error) error {
 	if err == nil {
 		return nil
+	}
+	if err == io.EOF {
+		return err
 	}
 	return fmt.Errorf("ar: %v", err)
 }

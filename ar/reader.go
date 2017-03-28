@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"os"
 	"strconv"
 	"time"
 )
@@ -30,6 +31,7 @@ type Header struct {
 	Name  string
 	UID   string
 	GID   string
+	Mode  os.FileMode
 	Size  uint64
 	Mtime time.Time
 }
@@ -88,12 +90,14 @@ func (cr *Reader) Next() (*Header, error) {
 	}
 	cr.pad = cr.left & 1
 
+	mode, _ := strconv.ParseInt(trim(h.Mode[:]), 8, 64)
 	mtime, _ := strconv.ParseInt(trim(h.Mtime[:]), 0, 64)
 
 	return &Header{
 		Name:  trim(h.Name[:]),
 		UID:   trim(h.UID[:]),
 		GID:   trim(h.GID[:]),
+		Mode:  os.FileMode(mode),
 		Size:  cr.left,
 		Mtime: time.Unix(mtime, 0),
 	}, nil
@@ -109,7 +113,7 @@ func (cr *Reader) Read(b []byte) (int, error) {
 		nr = uint64(len(b))
 	}
 
-	n, err := cr.Read(b[:nr])
+	n, err := cr.r.Read(b[:nr])
 	cr.left -= uint64(n)
 	return n, err
 }

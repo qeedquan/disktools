@@ -30,7 +30,15 @@ func NewWriter(w io.Writer) (*Writer, error) {
 	}, nil
 }
 
+func (cw *Writer) flush() {
+	for i := uint64(0); i < cw.wn+cw.pad; i++ {
+		cw.b.WriteByte('\n')
+	}
+	cw.wn, cw.pad = 0, 0
+}
+
 func (cw *Writer) Close() error {
+	cw.flush()
 	return cw.b.Flush()
 }
 
@@ -54,11 +62,7 @@ func (cw *Writer) WriteHeader(hdr *Header) error {
 
 func (cw *Writer) Write(b []byte) (int, error) {
 	if cw.wn == 0 {
-		if cw.pad > 0 {
-			n, err := cw.Write([]byte{'\n'})
-			cw.pad = 0
-			return n, wk(err)
-		}
+		cw.flush()
 		return 0, io.EOF
 	}
 
