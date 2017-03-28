@@ -17,7 +17,7 @@ var (
 )
 
 func main() {
-	log.SetPrefix("ar: ")
+	log.SetPrefix("sar: ")
 	log.SetFlags(0)
 	parseFlags()
 	runCommand(command)
@@ -50,7 +50,7 @@ func parseFlags() {
 
 func runCommand(command rune) {
 	if flag.NArg() < 2 {
-		fmt.Fprintln(os.Stdout, "no error")
+		fmt.Fprintln(os.Stdout, "sar: no error")
 		return
 	}
 
@@ -70,7 +70,7 @@ func runCommand(command rune) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: ar [options] {tx}[v] archive-file file...")
+	fmt.Fprintln(os.Stderr, "usage: sar [options] {tx}[v] archive-file file...")
 	flag.PrintDefaults()
 	fmt.Fprintln(os.Stderr, " commands:")
 	fmt.Fprintln(os.Stderr, "  t        - display contents of archive")
@@ -82,7 +82,7 @@ func usage() {
 
 func ek(err error) bool {
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "ar:", err)
+		fmt.Fprintln(os.Stderr, "sar:", err)
 		return true
 	}
 	return false
@@ -117,7 +117,7 @@ func list(r *ar.Reader) {
 		}
 		if verbose {
 			size := fmt.Sprint(h.Size)
-			fmt.Printf("%10s %v %s\n", size, h.Mtime, h.Name)
+			fmt.Printf("%v %10s %v %s\n", h.Mode, size, h.Mtime, h.Name)
 		} else {
 			fmt.Println(h.Name)
 		}
@@ -132,7 +132,7 @@ func extract(r *ar.Reader) {
 		}
 		ck(err)
 
-		if allowed(h.Name) {
+		if !allowed(h.Name) {
 			continue
 		}
 
@@ -147,5 +147,6 @@ func extract(r *ar.Reader) {
 
 		_, err = io.Copy(w, r)
 		ek(err)
+		ek(w.Close())
 	}
 }

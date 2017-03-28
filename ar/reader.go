@@ -113,7 +113,7 @@ func (cr *Reader) Read(b []byte) (int, error) {
 		nr = uint64(len(b))
 	}
 
-	n, err := cr.r.Read(b[:nr])
+	n, err := cr.b.Read(b[:nr])
 	cr.left -= uint64(n)
 	return n, err
 }
