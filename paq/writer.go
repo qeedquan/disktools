@@ -20,12 +20,10 @@ const (
 )
 
 type Writer struct {
-	o      *WriteOptions
-	w      *bufio.Writer
-	dg     hash.Hash
-	off    int64
-	pd     *Dir
-	closed bool
+	o   *WriteOptions
+	w   *bufio.Writer
+	dg  hash.Hash
+	off int64
 }
 
 type WriteOptions struct {
@@ -54,39 +52,55 @@ func NewWriter(w io.Writer, o *WriteOptions) (*Writer, error) {
 		o: o,
 		w: bufio.NewWriter(w),
 	}
-	p.writeHeader()
 
 	return p, nil
 }
 
-func (w *Writer) WriteDir(dir string, di os.FileInfo) error {
+func (w *Writer) WriteHeader() {
+	var b [HeaderSize]byte
+	if w.o.BlockSize < 65536 {
+		put4(b[:], HeaderMagic)
+		put2(b[4:], uint16(w.o.Version))
+		put2(b[6:], uint16(w.o.BlockSize))
+	} else {
+		put4(b[:], BigHeaderMagic)
+		put2(b[2:], uint16(w.o.Version))
+		put4(b[4:], uint32(w.o.BlockSize))
+	}
+	put4(b[8:], uint32(w.o.Time.Unix()))
+	puts(b[12:], w.o.Label)
+
+	w.write(b[:])
+}
+
+func (w *Writer) WriteDir(dir string, di os.FileInfo) (*Dir, error) {
 	fis, err := ioutil.ReadDir(dir)
 	if err != nil {
-		return &os.PathError{Op: "readdir", Path: dir, Err: err}
+		return nil, &os.PathError{Op: "readdir", Path: dir, Err: err}
 	}
 
 	for _, fi := range fis {
 		name := filepath.Join(dir, fi.Name())
 		if fi.IsDir() {
-			err = w.WriteDir(name, fi)
+			_, err = w.WriteDir(name, fi)
 		} else {
 			fd, err := os.Open(name)
 			if err != nil {
-				return err
+				return nil, err
 			}
-			err = w.WriteFile(name, fd)
+			_, err = w.WriteFile(name, fd)
 			fd.Close()
 		}
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
-func (w *Writer) WriteFile(name string, r io.Reader) error {
+func (w *Writer) WriteFile(name string, r io.Reader) (*Dir, error) {
 	b := make([]byte, w.o.BlockSize)
 	p := make([]byte, w.o.BlockSize)
 
@@ -96,7 +110,7 @@ func (w *Writer) WriteFile(name string, r io.Reader) error {
 	for {
 		nn, err := r.Read(b[n:])
 		if err != nil && err != io.EOF {
-			return &os.PathError{Op: "read", Path: name, Err: err}
+			return nil, &os.PathError{Op: "read", Path: name, Err: err}
 		}
 		tot += nn
 		if err == io.EOF {
@@ -114,32 +128,32 @@ func (w *Writer) WriteFile(name string, r io.Reader) error {
 			continue
 		}
 		if nb >= len(b)/offsetSize {
-			return fmt.Errorf("file too big for block size")
+			return nil, fmt.Errorf("file too big for block size")
 		}
 
-		off := w.writeBlock(b, DataBlock)
+		off := w.WriteBlock(b, DataBlock)
 		put4(p[nb*offsetSize:], uint32(off))
 		nb++
 		n = 0
 	}
-	w.writeBlock(p, PointerBlock)
+	w.WriteBlock(p, PointerBlock)
 
-	return nil
+	return nil, nil
+}
+
+func (w *Writer) WriteTrailer(root uint32) {
+	var b [TrailerSize]byte
+	put4(b[:], TrailerMagic)
+	put4(b[4:], root)
+	w.dg.Write(b[:8])
+
+	d := w.dg.Sum(nil)
+	copy(b[8:], d)
+
+	w.write(b[:])
 }
 
 func (w *Writer) Close() error {
-	if w.closed {
-		return nil
-	}
-
-	defer func() {
-		w.closed = true
-	}()
-
-	if w.pd != nil {
-		return nil
-	}
-	w.writeTrailer(0)
 	return w.w.Flush()
 }
 
@@ -149,24 +163,7 @@ func (w *Writer) write(b []byte) {
 	w.off += int64(n)
 }
 
-func (w *Writer) writeHeader() {
-	var b [HeaderSize]byte
-	if w.o.BlockSize < 65536 {
-		put4(b[:], HeaderMagic)
-		put2(b[4:], uint16(w.o.Version))
-		put2(b[6:], uint16(w.o.BlockSize))
-	} else {
-		put4(b[:], BigHeaderMagic)
-		put2(b[2:], uint16(w.o.Version))
-		put4(b[4:], uint32(w.o.BlockSize))
-	}
-	put4(b[8:], uint32(w.o.Time.Unix()))
-	puts(b[12:], w.o.Label)
-
-	w.write(b[:])
-}
-
-func (w *Writer) writeBlock(b []byte, typ int) int64 {
+func (w *Writer) WriteBlock(b []byte, typ int) int64 {
 	off := w.off
 
 	bh := Block{
@@ -204,16 +201,10 @@ func (w *Writer) writeBlock(b []byte, typ int) int64 {
 	return off
 }
 
-func (w *Writer) writeTrailer(root uint32) {
-	var b [TrailerSize]byte
-	put4(b[:], TrailerMagic)
-	put4(b[4:], root)
-	w.dg.Write(b[:8])
-
-	d := w.dg.Sum(nil)
-	copy(b[8:], d)
-
-	w.write(b[:])
+func (w *Writer) WriteBlockDir(d *Dir) int64 {
+	b := make([]byte, w.o.BlockSize)
+	putdir(b, d)
+	return w.WriteBlock(b, DirBlock)
 }
 
 func putdir(b []byte, d *Dir) {
