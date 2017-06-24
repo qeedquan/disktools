@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/flate"
+	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
 	"hash"
@@ -49,8 +50,9 @@ func NewWriter(w io.Writer, o *WriteOptions) (*Writer, error) {
 	}
 
 	p := &Writer{
-		o: o,
-		w: bufio.NewWriter(w),
+		o:  o,
+		w:  bufio.NewWriter(w),
+		dg: sha1.New(),
 	}
 
 	return p, nil

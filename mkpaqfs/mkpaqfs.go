@@ -89,6 +89,6 @@ func mkpaqfs(out *bufio.Writer, source string, options *paq.WriteOptions) error 
 		return err
 	}
 	off := w.WriteBlockDir(pd)
-	w.WriteTrailer(off)
+	w.WriteTrailer(uint32(off))
 	return w.Close()
 }
