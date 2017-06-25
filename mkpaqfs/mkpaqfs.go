@@ -12,13 +12,10 @@ import (
 )
 
 func main() {
-	var (
-		outfile string
-	)
-
 	log.SetFlags(0)
 	log.SetPrefix("mkpaqfs: ")
 
+	var outfile string
 	options := paq.DefaultWriteOptions()
 
 	flag.StringVar(&outfile, "o", "", "output file")

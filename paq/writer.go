@@ -97,7 +97,7 @@ func (w *Writer) WriteHeader() {
 func (w *Writer) WriteDir(dir string, di os.FileInfo) (*Dir, error) {
 	fis, err := ioutil.ReadDir(di.Name())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("paq: %v", err)
 	}
 
 	var (
@@ -121,7 +121,7 @@ func (w *Writer) WriteDir(dir string, di os.FileInfo) (*Dir, error) {
 		}
 
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("paq: ", err)
 		}
 
 		if n+dirsize(pd) >= len(b) {
@@ -131,14 +131,14 @@ func (w *Writer) WriteDir(dir string, di os.FileInfo) (*Dir, error) {
 			offset = w.WriteBlock(b, DirBlock)
 			n = 0
 			if nb >= len(b)/offsetSize {
-				return nil, fmt.Errorf("directory too big for block size: %s", dir)
+				return nil, fmt.Errorf("paq: directory too big for block size: %s", dir)
 			}
 			put4(p[nb*offsetSize:], uint32(offset))
 			nb++
 		}
 
 		if n+dirsize(pd) >= len(b) {
-			return nil, fmt.Errorf("directory too big for block size: %s", dir)
+			return nil, fmt.Errorf("paq: directory too big for block size: %s", dir)
 		}
 
 		putdir(b[n:], pd)
@@ -152,7 +152,7 @@ func (w *Writer) WriteDir(dir string, di os.FileInfo) (*Dir, error) {
 		}
 		offset = w.WriteBlock(b, DirBlock)
 		if nb >= len(b)/offsetSize {
-			return nil, fmt.Errorf("directory too big for block size: %s", dir)
+			return nil, fmt.Errorf("paq: directory too big for block size: %s", dir)
 		}
 		put4(p[nb*offsetSize:], uint32(offset))
 	}
@@ -172,7 +172,7 @@ func (w *Writer) WriteFile(r io.Reader, fi os.FileInfo) (*Dir, error) {
 	for {
 		nn, err := r.Read(b[n:])
 		if err != nil && err != io.EOF {
-			return nil, &os.PathError{Op: "read", Path: fi.Name(), Err: err}
+			return nil, fmt.Errorf("paq: failed to read %s: %v", fi.Name(), err)
 		}
 		tot += nn
 		if err == io.EOF {
@@ -190,7 +190,7 @@ func (w *Writer) WriteFile(r io.Reader, fi os.FileInfo) (*Dir, error) {
 			continue
 		}
 		if nb >= len(b)/offsetSize {
-			return nil, fmt.Errorf("file too big for block size")
+			return nil, fmt.Errorf("paq: file too big for block size")
 		}
 
 		offset := w.WriteBlock(b, DataBlock)
