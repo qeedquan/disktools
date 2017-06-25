@@ -14,20 +14,23 @@ import (
 func main() {
 	var (
 		outfile string
-		options paq.WriteOptions
 	)
 
 	log.SetFlags(0)
 	log.SetPrefix("mkpaqfs: ")
 
+	options := paq.DefaultWriteOptions()
+
 	flag.StringVar(&outfile, "o", "", "output file")
 	flag.StringVar(&options.Label, "l", "", "label")
-	flag.IntVar(&options.BlockSize, "b", 4096, "block size")
-	flag.BoolVar(&options.Compress, "u", false, "no compression")
+	flag.IntVar(&options.BlockSize, "b", options.BlockSize, "block size")
+	flag.BoolVar(&options.Compress, "u", !options.Compress, "no compression")
 	flag.Usage = usage
 	flag.Parse()
 
-	out := bufio.NewWriter(os.Stdin)
+	options.Compress = !options.Compress
+
+	out := bufio.NewWriter(os.Stdout)
 	if outfile != "" {
 		w, err := os.Create(outfile)
 		ck(err)
@@ -46,7 +49,7 @@ func main() {
 		options.Label = filepath.Base(source)
 	}
 
-	ck(mkpaqfs(out, source, &options))
+	ck(mkpaqfs(out, source, options))
 }
 
 func ck(err error) {
@@ -78,17 +81,16 @@ func mkpaqfs(out *bufio.Writer, source string, options *paq.WriteOptions) error 
 	}
 
 	var pd *paq.Dir
-
 	w.WriteHeader()
 	if fi.IsDir() {
 		pd, err = w.WriteDir(source, fi)
 	} else {
-		pd, err = w.WriteFile(source, fd)
+		pd, err = w.WriteFile(fd, fi)
 	}
 	if err != nil {
 		return err
 	}
-	off := w.WriteBlockDir(pd)
-	w.WriteTrailer(uint32(off))
+	offset := w.WriteBlockDir(pd)
+	w.WriteTrailer(uint32(offset))
 	return w.Close()
 }

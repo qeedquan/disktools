@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/user"
 	"path/filepath"
 	"time"
 )
@@ -21,10 +22,11 @@ const (
 )
 
 type Writer struct {
-	o   *WriteOptions
-	w   *bufio.Writer
-	dg  hash.Hash
-	off int64
+	o      *WriteOptions
+	w      *bufio.Writer
+	dg     hash.Hash
+	offset int64
+	qid    uint32
 }
 
 type WriteOptions struct {
@@ -33,16 +35,32 @@ type WriteOptions struct {
 	Label     string
 	Version   int
 	BlockSize int
+	Uid       string
+	Gid       string
+}
+
+func DefaultWriteOptions() *WriteOptions {
+	uid, gid := "glenda", "glenda"
+	u, err := user.Current()
+	if err == nil {
+		uid = u.Uid
+		gid = u.Gid
+	}
+
+	o := &WriteOptions{
+		Time:      time.Now(),
+		Compress:  true,
+		BlockSize: 4096,
+		Version:   Version,
+		Uid:       uid,
+		Gid:       gid,
+	}
+	return o
 }
 
 func NewWriter(w io.Writer, o *WriteOptions) (*Writer, error) {
 	if o == nil {
-		o = &WriteOptions{
-			Time:      time.Now(),
-			Compress:  true,
-			BlockSize: 4096,
-			Version:   Version,
-		}
+		o = DefaultWriteOptions()
 	}
 
 	if !(MinBlockSize <= o.BlockSize && o.BlockSize <= MaxBlockSize) {
@@ -50,9 +68,10 @@ func NewWriter(w io.Writer, o *WriteOptions) (*Writer, error) {
 	}
 
 	p := &Writer{
-		o:  o,
-		w:  bufio.NewWriter(w),
-		dg: sha1.New(),
+		o:   o,
+		w:   bufio.NewWriter(w),
+		dg:  sha1.New(),
+		qid: 1,
 	}
 
 	return p, nil
@@ -70,39 +89,80 @@ func (w *Writer) WriteHeader() {
 		put4(b[4:], uint32(w.o.BlockSize))
 	}
 	put4(b[8:], uint32(w.o.Time.Unix()))
-	puts(b[12:], w.o.Label)
+	copy(b[12:], w.o.Label)
 
 	w.write(b[:])
 }
 
 func (w *Writer) WriteDir(dir string, di os.FileInfo) (*Dir, error) {
-	fis, err := ioutil.ReadDir(dir)
+	fis, err := ioutil.ReadDir(di.Name())
 	if err != nil {
-		return nil, &os.PathError{Op: "readdir", Path: dir, Err: err}
+		return nil, err
 	}
 
+	var (
+		pd     *Dir
+		n, nb  int
+		offset int64
+		b      = make([]byte, w.o.BlockSize)
+		p      = make([]byte, w.o.BlockSize)
+	)
 	for _, fi := range fis {
 		name := filepath.Join(dir, fi.Name())
 		if fi.IsDir() {
-			_, err = w.WriteDir(name, fi)
+			pd, err = w.WriteDir(dir, fi)
 		} else {
 			fd, err := os.Open(name)
 			if err != nil {
 				return nil, err
 			}
-			_, err = w.WriteFile(name, fd)
+			pd, err = w.WriteFile(fd, fi)
 			fd.Close()
 		}
 
 		if err != nil {
 			return nil, err
 		}
+
+		if n+dirsize(pd) >= len(b) {
+			for i := n; i < len(b); i++ {
+				b[i] = 0
+			}
+			offset = w.WriteBlock(b, DirBlock)
+			n = 0
+			if nb >= len(b)/offsetSize {
+				return nil, fmt.Errorf("directory too big for block size: %s", dir)
+			}
+			put4(p[nb*offsetSize:], uint32(offset))
+			nb++
+		}
+
+		if n+dirsize(pd) >= len(b) {
+			return nil, fmt.Errorf("directory too big for block size: %s", dir)
+		}
+
+		putdir(b[n:], pd)
+		n += dirsize(pd)
+		pd = nil
 	}
 
-	return nil, nil
+	if n > 0 {
+		for i := n; i < len(b); i++ {
+			b[i] = 0
+		}
+		offset = w.WriteBlock(b, DirBlock)
+		if nb >= len(b)/offsetSize {
+			return nil, fmt.Errorf("directory too big for block size: %s", dir)
+		}
+		put4(p[nb*offsetSize:], uint32(offset))
+	}
+
+	offset = w.WriteBlock(p, PointerBlock)
+	d := w.allocDir(di, offset)
+	return d, nil
 }
 
-func (w *Writer) WriteFile(name string, r io.Reader) (*Dir, error) {
+func (w *Writer) WriteFile(r io.Reader, fi os.FileInfo) (*Dir, error) {
 	b := make([]byte, w.o.BlockSize)
 	p := make([]byte, w.o.BlockSize)
 
@@ -112,7 +172,7 @@ func (w *Writer) WriteFile(name string, r io.Reader) (*Dir, error) {
 	for {
 		nn, err := r.Read(b[n:])
 		if err != nil && err != io.EOF {
-			return nil, &os.PathError{Op: "read", Path: name, Err: err}
+			return nil, &os.PathError{Op: "read", Path: fi.Name(), Err: err}
 		}
 		tot += nn
 		if err == io.EOF {
@@ -133,40 +193,61 @@ func (w *Writer) WriteFile(name string, r io.Reader) (*Dir, error) {
 			return nil, fmt.Errorf("file too big for block size")
 		}
 
-		off := w.WriteBlock(b, DataBlock)
-		put4(p[nb*offsetSize:], uint32(off))
+		offset := w.WriteBlock(b, DataBlock)
+		put4(p[nb*offsetSize:], uint32(offset))
 		nb++
 		n = 0
 	}
-	w.WriteBlock(p, PointerBlock)
+	offset := w.WriteBlock(p, PointerBlock)
 
-	return nil, nil
+	d := w.allocDir(fi, offset)
+	d.Length = uint32(tot)
+
+	return d, nil
+}
+
+func (w *Writer) allocDir(fi os.FileInfo, offset int64) *Dir {
+	mode := fi.Mode() & 0777
+	if fi.IsDir() {
+		mode |= dmdir
+	}
+
+	mtime := fi.ModTime().Unix()
+
+	d := &Dir{
+		Qid:    w.qid,
+		Name:   fi.Name(),
+		Length: uint32(fi.Size()),
+		Mode:   uint32(mode),
+		Uid:    w.o.Uid,
+		Gid:    w.o.Gid,
+		Offset: uint32(offset),
+		Mtime:  uint32(mtime),
+	}
+	w.qid++
+	return d
 }
 
 func (w *Writer) WriteTrailer(root uint32) {
 	var b [TrailerSize]byte
 	put4(b[:], TrailerMagic)
 	put4(b[4:], root)
-	w.dg.Write(b[:8])
 
+	w.dg.Write(b[:8])
 	d := w.dg.Sum(nil)
 	copy(b[8:], d)
 
 	w.write(b[:])
 }
 
-func (w *Writer) Close() error {
-	return w.w.Flush()
-}
-
 func (w *Writer) write(b []byte) {
 	n, _ := w.w.Write(b)
 	w.dg.Write(b)
-	w.off += int64(n)
+	w.offset += int64(n)
 }
 
 func (w *Writer) WriteBlock(b []byte, typ int) int64 {
-	off := w.off
+	off := w.offset
 
 	bh := Block{
 		Magic:    BlockMagic,
@@ -183,6 +264,8 @@ func (w *Writer) WriteBlock(b []byte, typ int) int64 {
 		xerr := f.Close()
 		if err == nil && xerr == nil {
 			b = p.Bytes()
+			bh.Encoding = DeflateEnc
+			bh.Size = uint32(len(b))
 		}
 	}
 
@@ -209,6 +292,10 @@ func (w *Writer) WriteBlockDir(d *Dir) int64 {
 	return w.WriteBlock(b, DirBlock)
 }
 
+func (w *Writer) Close() error {
+	return w.w.Flush()
+}
+
 func putdir(b []byte, d *Dir) {
 	put2(b[:], uint16(dirsize(d)))
 	put4(b[2:], d.Qid)
@@ -218,10 +305,8 @@ func putdir(b []byte, d *Dir) {
 	put4(b[18:], d.Offset)
 
 	n := 22
-	puts(b[n:], d.Name)
-	n += len(d.Name)
-	puts(b[n:], d.Uid)
-	n += len(d.Uid)
+	n += puts(b[n:], d.Name)
+	n += puts(b[n:], d.Uid)
 	puts(b[n:], d.Gid)
 }
 
@@ -237,8 +322,9 @@ func put2(b []byte, v uint16) {
 	binary.BigEndian.PutUint16(b, v)
 }
 
-func puts(b []byte, s string) {
+func puts(b []byte, s string) int {
 	n := uint16(len(s))
 	put2(b, n+2)
 	copy(b[2:], s[:n])
+	return int(n) + 2
 }

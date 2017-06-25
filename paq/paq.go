@@ -34,6 +34,10 @@ type Dir struct {
 }
 
 const (
+	dmdir = 0x80000000
+)
+
+const (
 	DirBlock = iota
 	DataBlock
 	PointerBlock
@@ -51,7 +55,7 @@ const (
 	BlockMagic     = 0x198a1cbf
 	BlockSize      = 12
 	BigBlockMagic  = 0x91a8
-	TrailerMagic   = 0x6b46e88
+	TrailerMagic   = 0x6b46e688
 	TrailerSize    = 28
 	Version        = 1
 	MaxBlockSize   = 512 * 1024
