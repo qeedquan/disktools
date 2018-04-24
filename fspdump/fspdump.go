@@ -16,6 +16,10 @@ import (
 	fsp "github.com/qeedquan/disktools/fsp/v1"
 )
 
+var (
+	fwFile = flag.String("d", "", "dump firmware to file")
+)
+
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("fspdump: ")
@@ -34,6 +38,12 @@ func main() {
 	spew.Dump(fp.VolumnExtHeader)
 	spew.Dump(fp.FfsHeader)
 	spew.Dump(fp.FspHeader)
+	if *fwFile != "" {
+		err = ioutil.WriteFile(*fwFile, fp.Firmware, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func usage() {
