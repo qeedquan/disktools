@@ -1,5 +1,7 @@
 package fsp
 
+import "github.com/qeedquan/disktools/efi"
+
 type Header struct {
 	Signature              [4]uint8
 	HeaderLength           uint32
@@ -17,6 +19,14 @@ type Header struct {
 	FspInitEntryOffset     uint32
 	NotifyPhaseEntryOffset uint32
 	_                      [4]byte
+}
+
+type File struct {
+	VolumnHeader    efi.VolumnHeader
+	VolumnExtHeader efi.VolumnExtHeader
+	FfsHeader       efi.FfsFileHeader
+	FspHeader       Header
+	Firmware        []byte
 }
 
 type Error int
