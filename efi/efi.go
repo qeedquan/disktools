@@ -8,6 +8,14 @@ type ResourceType uint32
 type ResourceAttributeType uint32
 type MemoryType uint32
 
+type TableHeader struct {
+	Signature  uint64
+	Revision   uint32
+	HeaderSize uint32
+	CRC32      uint32
+	_          uint32
+}
+
 type BlockMapEntry struct {
 	NumBlocks uint32
 	Length    uint32
