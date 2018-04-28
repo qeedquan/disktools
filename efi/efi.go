@@ -2,6 +2,11 @@ package efi
 
 type GUID [16]uint8
 type Attributes2 uint32
+type BootMode uint32
+type PhysAddr uint64
+type ResourceType uint32
+type ResourceAttributeType uint32
+type MemoryType uint32
 
 type BlockMapEntry struct {
 	NumBlocks uint32
@@ -51,3 +56,14 @@ type CommonSectionHeader2 struct {
 
 type RawSection CommonSectionHeader
 type RawSection2 CommonSectionHeader2
+
+const (
+	RESOURCE_SYSTEM_MEMORY         ResourceType = 0x00000000
+	RESOURCE_MEMORY_MAPPED_IO      ResourceType = 0x00000001
+	RESOURCE_IO                    ResourceType = 0x00000002
+	RESOURCE_FIRMWARE_DEVICE       ResourceType = 0x00000003
+	RESOURCE_MEMORY_MAPPED_IO_PORT ResourceType = 0x00000004
+	RESOURCE_MEMORY_RESERVED       ResourceType = 0x00000005
+	RESOURCE_IO_RESERVED           ResourceType = 0x00000006
+	RESOURCE_MAX_MEMORY_TYPE       ResourceType = 0x00000007
+)
