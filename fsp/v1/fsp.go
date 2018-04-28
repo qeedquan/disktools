@@ -29,6 +29,26 @@ type File struct {
 	Firmware        []byte
 }
 
+type PlatData struct {
+	Data                []byte
+	MicrocodeRegionBase uint32
+	MicrocodeRegionSize uint32
+	CodeRegionBase      uint32
+	CodeRegionSize      uint32
+}
+
+type GlobalData struct {
+	Signature     uint32
+	CoreStack     uint32
+	PlatData      PlatData
+	FspInfoHeader Header
+	UpdDataRgnPtr interface{}
+	ApiMode       uint8
+	_             [3]uint8
+	PerfIdx       uint32
+	PerfData      [32]uint64
+}
+
 type Error int
 
 const (
