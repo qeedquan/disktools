@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/qeedquan/disktools/efi"
 	fsp "github.com/qeedquan/disktools/fsp/v1"
+	"github.com/qeedquan/disktools/fsp/v1/bdxde"
 )
 
 var (
@@ -38,6 +40,8 @@ func main() {
 	spew.Dump(fp.VolumnExtHeader)
 	spew.Dump(fp.FfsHeader)
 	spew.Dump(fp.FspHeader)
+	spew.Dump(fp.VPD)
+	spew.Dump(fp.UPD)
 	if *fwFile != "" {
 		err = ioutil.WriteFile(*fwFile, fp.Firmware, 0644)
 		if err != nil {
@@ -64,6 +68,8 @@ func readFSP(name string) (*fsp.File, error) {
 		veh efi.VolumnExtHeader
 		ffs efi.FfsFileHeader
 		hdr fsp.Header
+		vpd interface{}
+		upd interface{}
 		fw  []byte
 	)
 	err = readVolumnHeader(fd, &vh, &veh)
@@ -91,11 +97,42 @@ func readFSP(name string) (*fsp.File, error) {
 		return nil, fmt.Errorf("failed to read firmware: %v", err)
 	}
 
+	r = io.NewSectionReader(fd, int64(hdr.CfgRegionOffset), math.MaxInt32)
+	vpdat := make([]byte, hdr.CfgRegionSize)
+	if len(vpdat) < fsp.VPD_MIN_SIZE {
+		return nil, fmt.Errorf("invalid VPD size")
+	}
+	_, err = io.ReadAtLeast(r, vpdat, len(vpdat))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read VPD")
+	}
+
+	r = io.NewSectionReader(fd, int64(binary.LittleEndian.Uint64(vpdat[0xc:])), math.MaxInt32)
+	switch sig := binary.LittleEndian.Uint64(vpdat); sig {
+	case bdxde.FSP_IMAGE_ID:
+		var (
+			vpdc bdxde.VPD
+			updc bdxde.UPD
+		)
+		vpd = &vpdc
+		upd = &updc
+		binary.Read(bytes.NewBuffer(vpdat), binary.LittleEndian, &vpdc)
+		err = binary.Read(r, binary.LittleEndian, &updc)
+
+	default:
+		return nil, fmt.Errorf("unsupported VPD %#x", sig)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read UPD")
+	}
+
 	return &fsp.File{
 		VolumnHeader:    vh,
 		VolumnExtHeader: veh,
 		FfsHeader:       ffs,
 		FspHeader:       hdr,
+		VPD:             vpd,
+		UPD:             upd,
 		Firmware:        fw,
 	}, nil
 }

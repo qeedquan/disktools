@@ -26,6 +26,8 @@ type File struct {
 	VolumnExtHeader efi.VolumnExtHeader
 	FfsHeader       efi.FfsFileHeader
 	FspHeader       Header
+	VPD             interface{}
+	UPD             interface{}
 	Firmware        []byte
 }
 
@@ -98,3 +100,8 @@ func (e Error) Error() string {
 	}
 	return "unknown error"
 }
+
+const (
+	VPD_MIN_SIZE = 0x20
+	UPD_MIN_SIZE = 0x20
+)
